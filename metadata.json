@@ -1,0 +1,5 @@
+{
+  "name": "Zeroth AI",
+  "description": "Autonomous Competitive Programming Agent that understands, codes, tests, and optimizes solutions in a closed loop.",
+  "requestFramePermissions": []
+}
