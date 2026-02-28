@@ -23,9 +23,15 @@ import {
   Check,
   Share2,
   FileText,
-  X
+  X,
+  Lightbulb,
+  BrainCircuit,
+  Settings,
+  Wrench,
+  Rocket,
+  CloudUpload
 } from 'lucide-react';
-import { analyzeProblem, generateInitialCode, generateTestCases, debugAndRepair, optimizeCode, explainCode, ProblemAnalysis, TestCase } from './services/ai';
+import { analyzeProblem, generateInitialCode, generateTestCases, debugAndRepair, optimizeCode, explainCode, validateCode, analyzeAlgorithm, reviewCode, ProblemAnalysis, TestCase } from './services/ai';
 import Chatbot from './components/Chatbot';
 
 type Step = 'idle' | 'analyzing' | 'coding' | 'testing' | 'debugging' | 'optimizing' | 'completed' | 'failed';
@@ -37,12 +43,12 @@ interface LogEntry {
 }
 
 const PIPELINE_STEPS = [
-  { id: 'analyzing', label: 'Analysis', icon: Cpu },
-  { id: 'coding', label: 'Synthesis', icon: Code2 },
-  { id: 'testing', label: 'Validation', icon: Activity },
-  { id: 'debugging', label: 'Repair', icon: Bug },
-  { id: 'optimizing', label: 'Optimization', icon: Zap },
-  { id: 'completed', label: 'Deployment', icon: CheckCircle2 },
+  { id: 'analyzing', label: 'Analysis', icon: BrainCircuit },
+  { id: 'coding', label: 'Synthesis', subLabel: '(Coding)', icon: Settings },
+  { id: 'testing', label: 'Validation', subLabel: '(Testing)', icon: ShieldCheck },
+  { id: 'debugging', label: 'Repair', subLabel: '(Debugging)', icon: Wrench },
+  { id: 'optimizing', label: 'Optimization', icon: Rocket },
+  { id: 'completed', label: 'Deployment', icon: CloudUpload },
 ];
 
 const ErrorLogDisplay = ({ errorText }: { errorText: string }) => {
@@ -139,16 +145,40 @@ export default function App() {
   const [code, setCode] = useState('');
   const [testResults, setTestResults] = useState<any[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [thinkingMode, setThinkingMode] = useState(true);
+  const [proMode, setProMode] = useState(true);
   const [explanation, setExplanation] = useState('');
   const [isExplaining, setIsExplaining] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isAnalyzingAlgorithm, setIsAnalyzingAlgorithm] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
   const [generatedTests, setGeneratedTests] = useState<any[]>([]);
   const [showTestLibrary, setShowTestLibrary] = useState(false);
   const [allTests, setAllTests] = useState<any[]>([]);
   const [telemetryTab, setTelemetryTab] = useState<'logs' | 'errors'>('logs');
   const [isCopied, setIsCopied] = useState(false);
+  const [language, setLanguage] = useState<'python' | 'cpp' | 'java'>('python');
+  const [contestMode, setContestMode] = useState(false);
+  const [contestTime, setContestTime] = useState(0);
   const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let interval: any;
+    if (contestMode) {
+      interval = setInterval(() => {
+        setContestTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      setContestTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [contestMode]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   useEffect(() => {
     localStorage.setItem('zeroth_problem_description', problem);
@@ -184,18 +214,63 @@ export default function App() {
     }
   };
 
+  const handleValidate = async () => {
+    if (!code) return;
+    setIsValidating(true);
+    setShowExplanation(true);
+    setExplanation('Running deep validation and stress testing...');
+    try {
+      const result = await validateCode(problem, code);
+      setExplanation(result);
+    } catch (err: any) {
+      setExplanation(`Failed to run validation: ${err.message}`);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const handleAnalyzeAlgorithm = async () => {
+    if (!problem.trim()) return;
+    setIsAnalyzingAlgorithm(true);
+    setShowExplanation(true);
+    setExplanation('Consulting Algorithm Expert...\n\nAnalyzing problem type and optimal approaches...');
+    try {
+      const result = await analyzeAlgorithm(problem);
+      setExplanation(result);
+    } catch (err: any) {
+      setExplanation(`Failed to analyze algorithm: ${err.message}`);
+    } finally {
+      setIsAnalyzingAlgorithm(false);
+    }
+  };
+
+  const handleReviewCode = async () => {
+    if (!code) return;
+    setIsReviewing(true);
+    setShowExplanation(true);
+    setExplanation('AI Code Reviewer analyzing code for mistakes and improvements...');
+    try {
+      const result = await reviewCode(problem, code);
+      setExplanation(result);
+    } catch (err: any) {
+      setExplanation(`Failed to review code: ${err.message}`);
+    } finally {
+      setIsReviewing(false);
+    }
+  };
+
   const runAgent = async () => {
     if (!problem.trim()) return;
 
     setStep('analyzing');
     setLogs([]);
     addLog('ZEROTH CORE INITIALIZED', 'info');
-    addLog(`Establishing neural link with Gemini 3.1 Pro (Thinking: ${thinkingMode ? 'HIGH' : 'LOW'})...`, 'ai');
+    addLog(`Establishing neural link with ${proMode ? 'Gemini 3.1 Pro (Thinking: HIGH)' : 'Gemini 3.0 Flash (Thinking: LOW)'}...`, 'ai');
     
     try {
       // 1. Analyze
       addLog('Parsing problem semantics and constraints...', 'ai');
-      const analysisResponse = await analyzeProblem(problem, thinkingMode);
+      const analysisResponse = await analyzeProblem(problem, proMode);
       const analysisData = analysisResponse.data;
       if (analysisResponse.reasoning) {
         addLog(`Reasoning: ${analysisResponse.reasoning}`, 'ai');
@@ -206,8 +281,8 @@ export default function App() {
 
       // 2. Generate Initial Code
       setStep('coding');
-      addLog('Synthesizing algorithmic structure...', 'ai');
-      const codeResponse = await generateInitialCode(analysisData, thinkingMode);
+      addLog(`Synthesizing algorithmic structure in ${language.toUpperCase()}...`, 'ai');
+      const codeResponse = await generateInitialCode(analysisData, language, proMode);
       let currentCode = codeResponse.data;
       if (codeResponse.reasoning) {
         addLog(`Reasoning: ${codeResponse.reasoning}`, 'ai');
@@ -239,6 +314,9 @@ export default function App() {
       let iterations = 0;
       const MAX_ITERATIONS = 5;
       let allPassed = false;
+      let bestCode = currentCode;
+      let maxPassedCount = -1;
+      let bestTestResults: any[] = [];
 
       while (!allPassed && iterations < MAX_ITERATIONS) {
         iterations++;
@@ -247,11 +325,18 @@ export default function App() {
         const response = await fetch('/api/execute', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: currentCode, language: 'python', testCases: allTests }),
+          body: JSON.stringify({ code: currentCode, language: language, testCases: allTests }),
         });
         
         const { results } = await response.json();
         setTestResults(results);
+        
+        const passedCount = results.filter((r: any) => r.passed).length;
+        if (passedCount > maxPassedCount) {
+          maxPassedCount = passedCount;
+          bestCode = currentCode;
+          bestTestResults = results;
+        }
         
         const failed = results.filter((r: any) => !r.passed);
         if (failed.length === 0) {
@@ -262,27 +347,33 @@ export default function App() {
           setStep('debugging');
           setTelemetryTab('errors');
           addLog(`${failed.length} anomalies detected. Initiating self-repair protocols...`, 'error');
-          const repairResponse = await debugAndRepair(problem, currentCode, failed, thinkingMode);
-          if (!repairResponse.data || repairResponse.data.trim() === '') {
-            throw new Error('Self-repair generated empty code. Aborting.');
+          
+          if (iterations < MAX_ITERATIONS) {
+            const repairResponse = await debugAndRepair(problem, currentCode, failed, proMode);
+            if (!repairResponse.data || repairResponse.data.trim() === '') {
+              throw new Error('Self-repair generated empty code. Aborting.');
+            }
+            currentCode = repairResponse.data;
+            if (repairResponse.reasoning) {
+              addLog(`Reasoning: ${repairResponse.reasoning}`, 'ai');
+            }
+            setCode(currentCode);
+            addLog('Repair successful. Re-verifying...', 'info');
           }
-          currentCode = repairResponse.data;
-          if (repairResponse.reasoning) {
-            addLog(`Reasoning: ${repairResponse.reasoning}`, 'ai');
-          }
-          setCode(currentCode);
-          addLog('Repair successful. Re-verifying...', 'info');
         }
       }
 
       if (!allPassed) {
-        throw new Error('Neural convergence failed. Solution unstable.');
+        addLog(`Neural convergence incomplete. Returning best solution (${maxPassedCount}/${allTests.length} passed).`, 'error');
+        currentCode = bestCode;
+        setCode(currentCode);
+        setTestResults(bestTestResults);
       }
 
-      // 4. Optimize
+      // 5. Optimize
       setStep('optimizing');
       addLog('Correctness verified. Commencing performance optimization...', 'ai');
-      const optimizeResponse = await optimizeCode(problem, currentCode, thinkingMode);
+      const optimizeResponse = await optimizeCode(problem, currentCode, proMode);
       const optimizedCode = optimizeResponse.data;
       if (optimizeResponse.reasoning) {
         addLog(`Reasoning: ${optimizeResponse.reasoning}`, 'ai');
@@ -323,12 +414,12 @@ export default function App() {
 
         <div className="flex items-center gap-6 pointer-events-auto">
           <div className="hidden md:flex items-center gap-8 text-[10px] uppercase tracking-widest font-bold text-zinc-500">
-            <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setThinkingMode(!thinkingMode)}>
-              <span className={`transition-colors ${thinkingMode ? 'text-emerald-400' : 'text-zinc-500'}`}>Thinking Mode</span>
-              <div className={`w-8 h-4 rounded-full relative transition-colors ${thinkingMode ? 'bg-emerald-500/20 border-emerald-500/50' : 'bg-zinc-800 border-zinc-700'} border`}>
+            <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setProMode(!proMode)}>
+              <span className={`transition-colors ${proMode ? 'text-cyan-400' : 'text-zinc-500'}`}>PRO MODE</span>
+              <div className={`w-8 h-4 rounded-full relative transition-colors ${proMode ? 'bg-cyan-500/20 border-cyan-500/50' : 'bg-zinc-800 border-zinc-700'} border`}>
                 <motion.div 
-                  animate={{ x: thinkingMode ? 16 : 0 }}
-                  className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full ${thinkingMode ? 'bg-emerald-500' : 'bg-zinc-600'}`}
+                  animate={{ x: proMode ? 16 : 0 }}
+                  className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full ${proMode ? 'bg-cyan-500' : 'bg-zinc-600'}`}
                 />
               </div>
             </div>
@@ -350,13 +441,16 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full glass-panel p-6 flex items-center justify-between relative overflow-hidden"
+            className="w-full relative py-8 px-12"
           >
-            <div className="absolute top-1/2 left-16 right-16 h-[2px] bg-white/5 -translate-y-1/2 z-0" />
+            {/* Background Track */}
+            <div className="absolute top-1/2 left-12 right-12 h-6 bg-gradient-to-b from-zinc-800 to-zinc-900 rounded-full border border-white/10 shadow-inner -translate-y-1/2 z-0 overflow-hidden">
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjEiIHN0cm9rZS1vcGFjaXR5PSIwLjA1IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMCA0MGw0MC00ME0tMTAgMTBsMjAtMjBNMzAgNTBsMjAtMjAiLz48L2c+PC9zdmc+')] opacity-20" />
+            </div>
             
             {/* Active Progress Line */}
             <motion.div 
-              className="absolute top-1/2 left-16 h-[2px] bg-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.5)] -translate-y-1/2 z-0 origin-left"
+              className="absolute top-1/2 left-12 h-6 bg-gradient-to-r from-cyan-600 to-cyan-400 rounded-full shadow-[0_0_20px_rgba(34,211,238,0.6)] -translate-y-1/2 z-0 origin-left overflow-hidden"
               initial={{ scaleX: 0 }}
               animate={{ 
                 scaleX: step === 'idle' ? 0 : 
@@ -365,41 +459,74 @@ export default function App() {
                         Math.max(0, PIPELINE_STEPS.findIndex(s => s.id === step)) / (PIPELINE_STEPS.length - 1) 
               }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
-              style={{ width: 'calc(100% - 8rem)' }}
-            />
+              style={{ width: 'calc(100% - 6rem)' }}
+            >
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjEiIHN0cm9rZS1vcGFjaXR5PSIwLjIiIGZpbGw9Im5vbmUiPjxwYXRoIGQ9Ik0wIDQwbDQwLTQwTS0xMCAxMGwyMC0yME0zMCA1MGwyMC0yMCIvPjwvZz48L3N2Zz4')] opacity-50" />
+              <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent" />
+            </motion.div>
 
-            {PIPELINE_STEPS.map((s, i) => {
-              const currentIndex = PIPELINE_STEPS.findIndex(x => x.id === step);
-              const isActive = step === s.id;
-              const isPast = currentIndex > i || step === 'completed';
-              const isFailed = step === 'failed';
-              
-              return (
-                <div key={s.id} className="relative z-10 flex flex-col items-center gap-3 bg-[#050505] px-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${
-                    isActive && !isFailed ? 'border-emerald-500 bg-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.4)] scale-110' : 
-                    isPast && !isFailed ? 'border-emerald-500/50 bg-emerald-500/10' : 
-                    isFailed && isActive ? 'border-red-500 bg-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.4)] scale-110' :
-                    'border-white/5 bg-black'
-                  }`}>
-                    <s.icon className={`w-5 h-5 transition-colors duration-500 ${
-                      isActive && !isFailed ? 'text-emerald-400' : 
-                      isPast && !isFailed ? 'text-emerald-500/70' : 
-                      isFailed && isActive ? 'text-red-400' :
-                      'text-zinc-700'
-                    }`} />
+            <div className="relative z-10 flex justify-between items-center">
+              {PIPELINE_STEPS.map((s, i) => {
+                const currentIndex = PIPELINE_STEPS.findIndex(x => x.id === step);
+                const isActive = step === s.id;
+                const isPast = currentIndex > i || step === 'completed';
+                const isFailed = step === 'failed';
+                
+                return (
+                  <div key={s.id} className="flex flex-col items-center gap-4 relative">
+                    {/* Glowing ring for active state */}
+                    {isActive && !isFailed && (
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-cyan-500/20 blur-xl animate-pulse" />
+                    )}
+                    
+                    {/* Icon Container */}
+                    <div className={`relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 z-10 ${
+                      isActive && !isFailed ? 'bg-gradient-to-b from-cyan-400 to-cyan-600 shadow-[0_0_30px_rgba(34,211,238,0.6),inset_0_2px_4px_rgba(255,255,255,0.4)] scale-110 border-2 border-cyan-200' : 
+                      isPast && !isFailed ? 'bg-gradient-to-b from-zinc-300 to-zinc-500 shadow-[inset_0_2px_4px_rgba(255,255,255,0.6)] border border-zinc-400' : 
+                      isFailed && isActive ? 'bg-gradient-to-b from-red-500 to-red-700 shadow-[0_0_30px_rgba(239,68,68,0.6),inset_0_2px_4px_rgba(255,255,255,0.4)] scale-110 border-2 border-red-300' :
+                      'bg-gradient-to-b from-zinc-700 to-zinc-800 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] border border-zinc-600'
+                    }`}>
+                      {/* Inner metallic ring */}
+                      <div className={`absolute inset-1 rounded-full border ${
+                        isActive && !isFailed ? 'border-cyan-300/50' :
+                        isPast && !isFailed ? 'border-white/30' :
+                        isFailed && isActive ? 'border-red-300/50' :
+                        'border-black/50'
+                      }`} />
+                      
+                      <s.icon className={`w-6 h-6 relative z-10 transition-colors duration-500 ${
+                        isActive && !isFailed ? 'text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]' : 
+                        isPast && !isFailed ? 'text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]' : 
+                        isFailed && isActive ? 'text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]' :
+                        'text-zinc-500 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]'
+                      }`} />
+                    </div>
+                    
+                    {/* Labels */}
+                    <div className="flex flex-col items-center absolute top-[110%] w-32 text-center">
+                      <span className={`text-[11px] font-bold tracking-wider transition-colors duration-500 ${
+                        isActive && !isFailed ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 
+                        isPast && !isFailed ? 'text-zinc-300' : 
+                        isFailed && isActive ? 'text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]' :
+                        'text-zinc-500'
+                      }`}>
+                        {s.label}
+                      </span>
+                      {s.subLabel && (
+                        <span className={`text-[9px] font-medium tracking-widest mt-0.5 transition-colors duration-500 ${
+                          isActive && !isFailed ? 'text-cyan-500/80' : 
+                          isPast && !isFailed ? 'text-zinc-500' : 
+                          isFailed && isActive ? 'text-red-500/80' :
+                          'text-zinc-600'
+                        }`}>
+                          {s.subLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className={`text-[9px] font-bold uppercase tracking-widest transition-colors duration-500 ${
-                    isActive && !isFailed ? 'text-emerald-400' : 
-                    isPast && !isFailed ? 'text-emerald-500/70' : 
-                    isFailed && isActive ? 'text-red-400' :
-                    'text-zinc-600'
-                  }`}>
-                    {s.label}
-                  </span>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </motion.div>
 
           {/* Collapsible Analysis Panel */}
@@ -418,9 +545,41 @@ export default function App() {
                     </div>
                     <div className="flex-1 space-y-4">
                       <div>
-                        <h3 className="text-emerald-400 font-bold text-sm uppercase tracking-widest mb-1">{analysis.title}</h3>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-emerald-400 font-bold text-sm uppercase tracking-widest">{analysis.title}</h3>
+                          {analysis.difficulty && (
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest ${
+                              analysis.difficulty.toLowerCase() === 'hard' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                              analysis.difficulty.toLowerCase() === 'medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                              'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            }`}>
+                              {analysis.difficulty}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-zinc-400 text-xs leading-relaxed">{analysis.complexityGoal}</p>
                       </div>
+                      
+                      {analysis.algorithm && (
+                        <>
+                          <div className="h-[1px] bg-emerald-500/10" />
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <h4 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500/60 mb-1">Algorithm</h4>
+                              <p className="text-xs text-zinc-300 font-mono">{analysis.algorithm}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500/60 mb-1">Time Complexity</h4>
+                              <p className="text-xs text-zinc-300 font-mono">{analysis.timeComplexity}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500/60 mb-1">Space Complexity</h4>
+                              <p className="text-xs text-zinc-300 font-mono">{analysis.spaceComplexity}</p>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
                       <div className="h-[1px] bg-emerald-500/10" />
                       <div>
                         <h4 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500/60 mb-2">Constraints & Edge Cases</h4>
@@ -458,7 +617,27 @@ export default function App() {
                 </div>
                 <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Problem Input</h2>
               </div>
-              <ShieldCheck className="w-4 h-4 text-zinc-600" />
+              <div className="flex items-center gap-3">
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as any)}
+                  disabled={step !== 'idle' && step !== 'completed' && step !== 'failed'}
+                  className="bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 outline-none focus:border-emerald-500/50 transition-colors"
+                >
+                  <option value="python" className="bg-zinc-900 text-zinc-300">Python</option>
+                  <option value="cpp" className="bg-zinc-900 text-zinc-300">C++</option>
+                  <option value="java" className="bg-zinc-900 text-zinc-300">Java</option>
+                </select>
+                <button
+                  onClick={handleAnalyzeAlgorithm}
+                  disabled={!problem.trim() || isAnalyzingAlgorithm}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-zinc-400 hover:text-white text-[10px] font-bold uppercase tracking-widest disabled:opacity-50"
+                  title="Get Algorithm Strategy"
+                >
+                  {isAnalyzingAlgorithm ? <Loader2 className="w-3 h-3 animate-spin text-emerald-500" /> : <Lightbulb className="w-3 h-3" />}
+                  Strategy
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 flex flex-col gap-4 overflow-hidden relative z-10">
@@ -575,12 +754,28 @@ export default function App() {
               </div>
               <div className="flex items-center gap-4">
                 <button 
+                  onClick={handleValidate}
+                  disabled={!code || isValidating || isExplaining || isReviewing}
+                  className="p-2 hover:bg-white/5 rounded-lg transition-colors text-zinc-500 hover:text-white disabled:opacity-30"
+                  title="Stress Test / Validate"
+                >
+                  {isValidating ? <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> : <ShieldCheck className="w-4 h-4" />}
+                </button>
+                <button 
+                  onClick={handleReviewCode}
+                  disabled={!code || isExplaining || isValidating || isReviewing}
+                  className="p-2 hover:bg-white/5 rounded-lg transition-colors text-zinc-500 hover:text-white disabled:opacity-30"
+                  title="AI Code Review"
+                >
+                  {isReviewing ? <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> : <Bug className="w-4 h-4" />}
+                </button>
+                <button 
                   onClick={handleExplain}
-                  disabled={!code || isExplaining}
+                  disabled={!code || isExplaining || isValidating || isReviewing}
                   className="p-2 hover:bg-white/5 rounded-lg transition-colors text-zinc-500 hover:text-white disabled:opacity-30"
                   title="Explain Code"
                 >
-                  <FileText className="w-4 h-4" />
+                  {isExplaining ? <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> : <FileText className="w-4 h-4" />}
                 </button>
                 <button 
                   onClick={handleCopy}
@@ -676,6 +871,11 @@ export default function App() {
                     ))}
                     <div ref={terminalEndRef} />
                   </div>
+                ) : contestMode ? (
+                  <div className="h-full flex flex-col items-center justify-center text-amber-500/50 gap-2 pt-8">
+                    <Zap className="w-6 h-6 text-amber-500/30" />
+                    <span className="uppercase tracking-widest font-bold text-[9px]">Error Logs Hidden in Contest Mode</span>
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     {testResults.filter(r => !r.passed).length > 0 ? (
@@ -727,7 +927,7 @@ export default function App() {
                   <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Validation Matrix</h2>
                 </div>
                 <div className="flex items-center gap-3">
-                  {allTests.length > 0 && (
+                  {allTests.length > 0 && !contestMode && (
                     <button 
                       onClick={() => setShowTestLibrary(true)}
                       className="text-[9px] font-bold uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20"
@@ -737,7 +937,9 @@ export default function App() {
                     </button>
                   )}
                   <div className="text-[10px] font-bold text-zinc-500 bg-black/40 px-3 py-1.5 rounded-lg border border-white/5">
-                    {testResults.length > 0 ? (
+                    {contestMode ? (
+                      <span className="text-amber-500">CONTEST ACTIVE</span>
+                    ) : testResults.length > 0 ? (
                       <span className={testResults.every(r => r.passed) ? 'text-emerald-500' : 'text-amber-500'}>
                         {testResults.filter(r => r.passed).length}/{testResults.length} PASSED
                       </span>
@@ -749,7 +951,13 @@ export default function App() {
               </div>
               
               <div className="flex-1 grid grid-cols-4 gap-3 overflow-auto custom-scrollbar pr-2 relative z-10">
-                {testResults.length > 0 ? (
+                {contestMode ? (
+                  <div className="col-span-4 h-full flex flex-col items-center justify-center border border-dashed border-amber-500/30 rounded-xl bg-amber-500/5">
+                    <Zap className="w-6 h-6 text-amber-500 mb-2" />
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-amber-500">Hidden in Contest Mode</span>
+                    <span className="text-[12px] font-bold text-amber-400 mt-2 font-mono">{formatTime(contestTime)}</span>
+                  </div>
+                ) : testResults.length > 0 ? (
                   testResults.map((res, i) => (
                     <button 
                       key={i} 
@@ -784,16 +992,25 @@ export default function App() {
             <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Core: Online</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Thinking: Active</span>
+            <div className={`w-2 h-2 rounded-full ${proMode ? 'bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]' : 'bg-zinc-800'}`} />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Pro Mode: {proMode ? 'Active' : 'Inactive'}</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-zinc-800" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Sandbox: Isolated</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Sandbox: Docker Container</span>
           </div>
         </div>
         
         <div className="flex items-center gap-4 pointer-events-auto">
+          <button
+            onClick={() => setContestMode(!contestMode)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
+              contestMode ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-zinc-500 hover:text-zinc-400 border border-white/5'
+            }`}
+          >
+            <Zap className="w-3 h-3" />
+            Contest Mode
+          </button>
           <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">v2.4.0-Neural</div>
           <div className="h-4 w-[1px] bg-white/10" />
           <Share2 className="w-4 h-4 text-zinc-600 hover:text-white cursor-pointer transition-colors" />

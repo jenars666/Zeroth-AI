@@ -9,6 +9,10 @@ export interface ProblemAnalysis {
   outputFormat: string;
   complexityGoal: string;
   approach: string;
+  algorithm: string;
+  timeComplexity: string;
+  spaceComplexity: string;
+  difficulty: string;
   reasoning?: string;
 }
 
@@ -22,14 +26,14 @@ export interface AIResponse<T> {
   reasoning?: string;
 }
 
-export const analyzeProblem = async (problemDescription: string, includeReasoning: boolean = false): Promise<AIResponse<ProblemAnalysis>> => {
+export const analyzeProblem = async (problemDescription: string, isProMode: boolean = false): Promise<AIResponse<ProblemAnalysis>> => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: isProMode ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
     contents: `Analyze this competitive programming problem and provide a structured breakdown. 
-    ${includeReasoning ? "Include a detailed 'reasoning' field explaining your thought process and how you derived the approach." : ""}
+    ${isProMode ? "Include a detailed 'reasoning' field explaining your thought process and how you derived the approach." : ""}
     Problem: ${problemDescription}`,
     config: {
-      thinkingConfig: { thinkingLevel: includeReasoning ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
+      thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -40,9 +44,13 @@ export const analyzeProblem = async (problemDescription: string, includeReasonin
           outputFormat: { type: Type.STRING },
           complexityGoal: { type: Type.STRING },
           approach: { type: Type.STRING },
+          algorithm: { type: Type.STRING, description: "The name of the algorithm to use (e.g., Kadane's Algorithm, Dijkstra)" },
+          timeComplexity: { type: Type.STRING, description: "The time complexity (e.g., O(N log N))" },
+          spaceComplexity: { type: Type.STRING, description: "The space complexity (e.g., O(N))" },
+          difficulty: { type: Type.STRING, description: "The difficulty of the problem (e.g., Easy, Medium, Hard)" },
           reasoning: { type: Type.STRING },
         },
-        required: ["title", "constraints", "inputFormat", "outputFormat", "complexityGoal", "approach"],
+        required: ["title", "constraints", "inputFormat", "outputFormat", "complexityGoal", "approach", "algorithm", "timeComplexity", "spaceComplexity", "difficulty"],
       },
     },
   });
@@ -58,21 +66,21 @@ export const analyzeProblem = async (problemDescription: string, includeReasonin
   return { data, reasoning: data.reasoning };
 };
 
-export const generateInitialCode = async (analysis: ProblemAnalysis, includeReasoning: boolean = false): Promise<AIResponse<string>> => {
+export const generateInitialCode = async (analysis: ProblemAnalysis, language: string, isProMode: boolean = false): Promise<AIResponse<string>> => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `You are an elite Competitive Programming AI. Generate a Python solution for the following problem analysis:
+    model: isProMode ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
+    contents: `You are an elite Competitive Programming AI. Generate a ${language.toUpperCase()} solution for the following problem analysis:
     ${JSON.stringify(analysis, null, 2)}
     
     CORE DIRECTIVES:
-    1. Fast I/O is Mandatory: Use \`sys.stdin.read().split()\` for reading inputs. Avoid standard \`input()\`.
+    1. Fast I/O is Mandatory: Use fast I/O techniques appropriate for ${language.toUpperCase()}.
     2. The 10^15 Packing Trick: When the problem requires prioritizing minimizing 'item count' before 'total cost' (or similar dual-objective optimization), you MUST use the packing trick. Combine the objectives into a single weight: \`combined_weight = item_count * 10**15 + total_cost\`. Optimize for \`combined_weight\`. After finding the optimal path/state, extract the original values using division and modulo operations.
     3. Complexity Constraints: Strictly adhere to the required Time and Memory complexity provided in the problem analysis.
     4. Robustness: Initialize variables carefully. Handle integer overflow. Beware of 0-indexed vs 1-indexed requirements.
     
-    ${includeReasoning ? "Before the code, provide a brief 'reasoning' section wrapped in <reasoning> tags. Then provide the code." : "Return ONLY the Python code. No markdown formatting."}`,
+    ${isProMode ? `Before the code, provide a brief 'reasoning' section wrapped in <reasoning> tags. Then provide the ${language.toUpperCase()} code.` : `Return ONLY the ${language.toUpperCase()} code. No markdown formatting.`}`,
     config: {
-      thinkingConfig: { thinkingLevel: includeReasoning ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
+      thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
     }
   });
 
@@ -145,10 +153,10 @@ export const debugAndRepair = async (
   problemDescription: string,
   code: string,
   failedTests: any[],
-  includeReasoning: boolean = false
+  isProMode: boolean = false
 ): Promise<AIResponse<string>> => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: isProMode ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
     contents: `You are an elite Competitive Programming AI repairing previously failed code.
     The following Python code failed some test cases. 
     Problem: ${problemDescription}
@@ -160,9 +168,9 @@ export const debugAndRepair = async (
     2. Ensure Fast I/O is used: \`sys.stdin.read().split()\`.
     3. If the problem requires dual-objective optimization (e.g., minimizing item count then total cost), ensure the 10^15 packing trick is implemented correctly: \`combined_weight = item_count * 10**15 + total_cost\`.
     
-    ${includeReasoning ? "Before the code, provide a 'reasoning' section wrapped in <reasoning> tags explaining the bug and the fix. Then provide the FIXED Python code." : "Analyze the failures and provide the FIXED Python code. Return ONLY the code. No markdown formatting."}`,
+    ${isProMode ? "Before the code, provide a 'reasoning' section wrapped in <reasoning> tags explaining the bug and the fix. Then provide the FIXED Python code." : "Analyze the failures and provide the FIXED Python code. Return ONLY the code. No markdown formatting."}`,
     config: {
-      thinkingConfig: { thinkingLevel: includeReasoning ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
+      thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
     }
   });
 
@@ -171,19 +179,19 @@ export const debugAndRepair = async (
   const reasoning = reasoningMatch ? reasoningMatch[1].trim() : undefined;
   
   let fixedCode = text.replace(/<reasoning>[\s\S]*?<\/reasoning>/, "").trim();
-  const codeMatch = fixedCode.match(/```(?:python)?\n([\s\S]*?)```/);
+  const codeMatch = fixedCode.match(/```(?:python|cpp|java)?\n([\s\S]*?)```/);
   if (codeMatch) {
     fixedCode = codeMatch[1].trim();
   } else {
-    fixedCode = fixedCode.replace(/```python|```/g, "").trim();
+    fixedCode = fixedCode.replace(/```(?:python|cpp|java)|```/g, "").trim();
   }
 
   return { data: fixedCode, reasoning };
 };
 
-export const optimizeCode = async (problemDescription: string, code: string, includeReasoning: boolean = false): Promise<AIResponse<string>> => {
+export const optimizeCode = async (problemDescription: string, code: string, isProMode: boolean = false): Promise<AIResponse<string>> => {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: isProMode ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
     contents: `You are an expert algorithm analyzer.
     
     Given a piece of code, do the following:
@@ -197,9 +205,9 @@ export const optimizeCode = async (problemDescription: string, code: string, inc
     Problem: ${problemDescription}
     Current Code: ${code}
     
-    ${includeReasoning ? "Provide a step-by-step reasoning section wrapped in <reasoning> tags explaining your analysis for steps 1-5. Then provide the optimized Python code (step 6)." : "Analyze the code internally and return ONLY the optimized Python code. No markdown formatting."}`,
+    ${isProMode ? "Provide a step-by-step reasoning section wrapped in <reasoning> tags explaining your analysis for steps 1-5. Then provide the optimized Python code (step 6)." : "Analyze the code internally and return ONLY the optimized Python code. No markdown formatting."}`,
     config: {
-      thinkingConfig: { thinkingLevel: includeReasoning ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
+      thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
     }
   });
 
@@ -208,11 +216,11 @@ export const optimizeCode = async (problemDescription: string, code: string, inc
   const reasoning = reasoningMatch ? reasoningMatch[1].trim() : undefined;
   
   let optimizedCode = text.replace(/<reasoning>[\s\S]*?<\/reasoning>/, "").trim();
-  const codeMatch = optimizedCode.match(/```(?:python)?\n([\s\S]*?)```/);
+  const codeMatch = optimizedCode.match(/```(?:python|cpp|java)?\n([\s\S]*?)```/);
   if (codeMatch) {
     optimizedCode = codeMatch[1].trim();
   } else {
-    optimizedCode = optimizedCode.replace(/```python|```/g, "").trim();
+    optimizedCode = optimizedCode.replace(/```(?:python|cpp|java)|```/g, "").trim();
   }
 
   return { data: optimizedCode, reasoning };
@@ -249,4 +257,70 @@ export const explainCode = async (problemDescription: string, code: string): Pro
   });
 
   return response.text || "No explanation generated.";
+};
+
+export const validateCode = async (problemDescription: string, code: string): Promise<string> => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `You are a competitive programming validator.
+    
+    For a given algorithm:
+    1. Generate random test cases.
+    2. Compare optimized solution with brute force solution.
+    3. Identify any mismatch.
+    4. Report the failing test case.
+    
+    Goal: detect hidden bugs automatically.
+    
+    Problem: ${problemDescription}
+    Optimized Code: ${code}
+    
+    Perform the validation steps mentally or by writing a script, and output a detailed report of your findings, including any failing test cases you discovered. Use Markdown formatting.`,
+  });
+
+  return response.text || "No validation report generated.";
+};
+
+export const analyzeAlgorithm = async (problemDescription: string): Promise<string> => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `You are an algorithm expert.
+    
+    Given a programming problem, determine:
+    1. Problem type
+    2. Suitable algorithm
+    3. Why that algorithm is optimal
+    4. Alternative approaches
+    5. Time complexity comparison
+    
+    Explain clearly using Markdown formatting.
+    
+    Problem: ${problemDescription}`,
+  });
+
+  return response.text || "No algorithm analysis generated.";
+};
+
+export const reviewCode = async (problemDescription: string, code: string): Promise<string> => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `You are an AI Code Reviewer.
+    
+    Review the following code for a competitive programming problem.
+    1. Explain any mistakes or inefficiencies.
+    2. Suggest improvements.
+    3. Provide the new time and space complexity if improved.
+    
+    Example output format:
+    **Issue:** O(N²) algorithm used for searching.
+    **Better Approach:** Use a Hash Map to store frequencies.
+    **New Complexity:** O(N) Time, O(N) Space.
+    
+    Problem: ${problemDescription}
+    Code: ${code}
+    
+    Provide a concise, highly technical review using Markdown formatting.`,
+  });
+
+  return response.text || "No code review generated.";
 };
