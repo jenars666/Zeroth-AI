@@ -19,6 +19,12 @@ body {
   color: #ffffff;
   font-family: var(--font-sans);
   overflow-x: hidden;
+  transition: filter 0.3s ease, background-color 0.3s ease;
+}
+
+.light-mode {
+  filter: invert(1) hue-rotate(180deg);
+  background-color: #fafafa;
 }
 
 /* Atmospheric Background */

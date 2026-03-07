@@ -158,6 +158,15 @@ export default function App() {
   const [telemetryTab, setTelemetryTab] = useState<'logs' | 'errors'>('logs');
   const [isCopied, setIsCopied] = useState(false);
   const [language, setLanguage] = useState<'python' | 'cpp' | 'java'>('python');
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light-mode');
+    } else {
+      document.body.classList.remove('light-mode');
+    }
+  }, [theme]);
   const [contestMode, setContestMode] = useState(false);
   const [contestTime, setContestTime] = useState(0);
   const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -269,30 +278,33 @@ export default function App() {
     
     try {
       // 1. Analyze
-      addLog('Parsing problem semantics and constraints...', 'ai');
+      addLog('Thought: I need to understand the problem and plan the optimal algorithm.', 'ai');
+      addLog('Action: analyze_problem', 'info');
       const analysisResponse = await analyzeProblem(problem, proMode);
       const analysisData = analysisResponse.data;
       if (analysisResponse.reasoning) {
         addLog(`Reasoning: ${analysisResponse.reasoning}`, 'ai');
       }
       setAnalysis(analysisData);
-      addLog(`Target Identified: ${analysisData.title}`, 'success');
+      addLog(`Observation: Problem analyzed. Optimal approach determined: ${analysisData.algorithm}.`, 'success');
       addLog(`Complexity Objective: ${analysisData.complexityGoal}`, 'info');
 
       // 2. Generate Initial Code
       setStep('coding');
-      addLog(`Synthesizing algorithmic structure in ${language.toUpperCase()}...`, 'ai');
+      addLog(`Thought: Now I will generate the initial ${language.toUpperCase()} code based on the analysis.`, 'ai');
+      addLog('Action: generate_code', 'info');
       const codeResponse = await generateInitialCode(analysisData, language, proMode);
       let currentCode = codeResponse.data;
       if (codeResponse.reasoning) {
         addLog(`Reasoning: ${codeResponse.reasoning}`, 'ai');
       }
       setCode(currentCode);
-      addLog('Base architecture established.', 'success');
+      addLog('Observation: Initial code synthesized successfully.', 'success');
 
       // 3. Generate Test Cases Once
       setStep('testing');
-      addLog('Generating adversarial test cases...', 'ai');
+      addLog('Thought: I need to generate comprehensive edge cases to validate the solution.', 'ai');
+      addLog('Action: generate_test_cases', 'info');
       const newGeneratedTests = await generateTestCases(problem, analysisData, currentCode);
       setGeneratedTests(newGeneratedTests);
       setShowTestLibrary(true); // Automatically show the test library so the user can see the generated tests
@@ -308,7 +320,7 @@ export default function App() {
 
       const allTests = [...inputPublicTests, ...newGeneratedTests];
       setAllTests(allTests);
-      addLog(`Stress testing with ${allTests.length} scenarios...`, 'info');
+      addLog(`Observation: ${allTests.length} test cases generated for stress testing.`, 'success');
 
       // 4. Test & Repair Loop
       let iterations = 0;
@@ -320,7 +332,8 @@ export default function App() {
 
       while (!allPassed && iterations < MAX_ITERATIONS) {
         iterations++;
-        addLog(`Validation Cycle ${iterations}: Executing code...`, 'ai');
+        addLog(`Thought: Executing code against generated test cases to verify correctness (Attempt ${iterations}/${MAX_ITERATIONS}).`, 'ai');
+        addLog('Action: run_code', 'info');
 
         const response = await fetch('/api/execute', {
           method: 'POST',
@@ -342,13 +355,15 @@ export default function App() {
         if (failed.length === 0) {
           allPassed = true;
           setTelemetryTab('logs');
-          addLog('All validation cycles passed. Integrity confirmed.', 'success');
+          addLog(`Observation: All ${allTests.length} tests passed successfully. Integrity confirmed.`, 'success');
         } else {
           setStep('debugging');
           setTelemetryTab('errors');
-          addLog(`${failed.length} anomalies detected. Initiating self-repair protocols...`, 'error');
+          addLog(`Observation: ${failed.length} tests failed. Debugging required.`, 'error');
           
           if (iterations < MAX_ITERATIONS) {
+            addLog(`Thought: Analyzing failed test cases to identify logical flaws or edge case misses.`, 'ai');
+            addLog('Action: debug_code', 'info');
             const repairResponse = await debugAndRepair(problem, currentCode, failed, proMode);
             if (!repairResponse.data || repairResponse.data.trim() === '') {
               throw new Error('Self-repair generated empty code. Aborting.');
@@ -358,13 +373,13 @@ export default function App() {
               addLog(`Reasoning: ${repairResponse.reasoning}`, 'ai');
             }
             setCode(currentCode);
-            addLog('Repair successful. Re-verifying...', 'info');
+            addLog('Observation: Code repaired. Re-running tests.', 'success');
           }
         }
       }
 
       if (!allPassed) {
-        addLog(`Neural convergence incomplete. Returning best solution (${maxPassedCount}/${allTests.length} passed).`, 'error');
+        addLog(`Observation: Neural convergence incomplete. Returning best solution (${maxPassedCount}/${allTests.length} passed).`, 'error');
         currentCode = bestCode;
         setCode(currentCode);
         setTestResults(bestTestResults);
@@ -372,17 +387,18 @@ export default function App() {
 
       // 5. Optimize
       setStep('optimizing');
-      addLog('Correctness verified. Commencing performance optimization...', 'ai');
+      addLog('Thought: The solution is correct. Now I will optimize it for maximum performance.', 'ai');
+      addLog('Action: optimize_code', 'info');
       const optimizeResponse = await optimizeCode(problem, currentCode, proMode);
       const optimizedCode = optimizeResponse.data;
       if (optimizeResponse.reasoning) {
         addLog(`Reasoning: ${optimizeResponse.reasoning}`, 'ai');
       }
       setCode(optimizedCode);
-      addLog('Optimization complete. Finalizing solution...', 'success');
+      addLog('Observation: Code optimized successfully.', 'success');
 
       setStep('completed');
-      addLog('ZEROTH AI: MISSION ACCOMPLISHED', 'success');
+      addLog('FINAL SOLUTION DEPLOYED', 'success');
     } catch (err: any) {
       setStep('failed');
       addLog(`CRITICAL FAILURE: ${err.message}`, 'error');
@@ -414,6 +430,15 @@ export default function App() {
 
         <div className="flex items-center gap-6 pointer-events-auto">
           <div className="hidden md:flex items-center gap-8 text-[10px] uppercase tracking-widest font-bold text-zinc-500">
+            <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+              <span className={`transition-colors ${theme === 'light' ? 'text-emerald-400' : 'text-zinc-500'}`}>LIGHT MODE</span>
+              <div className={`w-8 h-4 rounded-full relative transition-colors ${theme === 'light' ? 'bg-emerald-500/20 border-emerald-500/50' : 'bg-zinc-800 border-zinc-700'} border`}>
+                <motion.div 
+                  animate={{ x: theme === 'light' ? 16 : 0 }}
+                  className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full ${theme === 'light' ? 'bg-emerald-500' : 'bg-zinc-600'}`}
+                />
+              </div>
+            </div>
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setProMode(!proMode)}>
               <span className={`transition-colors ${proMode ? 'text-cyan-400' : 'text-zinc-500'}`}>PRO MODE</span>
               <div className={`w-8 h-4 rounded-full relative transition-colors ${proMode ? 'bg-cyan-500/20 border-cyan-500/50' : 'bg-zinc-800 border-zinc-700'} border`}>
@@ -519,7 +544,7 @@ export default function App() {
                           isFailed && isActive ? 'text-red-500/80' :
                           'text-zinc-600'
                         }`}>
-                          {s.subLabel}
+                          {s.id === 'coding' ? `(${language === 'cpp' ? 'C++' : language.charAt(0).toUpperCase() + language.slice(1)})` : s.subLabel}
                         </span>
                       )}
                     </div>

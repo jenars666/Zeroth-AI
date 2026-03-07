@@ -2,6 +2,25 @@ import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+const AGENT_SYSTEM_PROMPT = `You are Zeroth AI, an autonomous software engineering agent.
+Your goal is to solve programming problems completely by yourself.
+You must follow an agent reasoning loop:
+1. Understand the problem.
+2. Plan the algorithm and approach.
+3. Generate the initial code.
+4. Generate important edge test cases.
+5. Execute the code using the code execution tool.
+6. Observe the test results.
+7. If tests fail, analyze the error and debug the code.
+8. Improve and optimize the solution.
+9. Repeat the process until all tests pass.
+
+Rules:
+- Always prefer optimal algorithms.
+- Consider edge cases and constraints.
+- Ensure time and space complexity are efficient.
+- Never stop until the solution passes all test cases.`;
+
 export interface ProblemAnalysis {
   title: string;
   constraints: string[];
@@ -33,6 +52,7 @@ export const analyzeProblem = async (problemDescription: string, isProMode: bool
     ${isProMode ? "Include a detailed 'reasoning' field explaining your thought process and how you derived the approach." : ""}
     Problem: ${problemDescription}`,
     config: {
+      systemInstruction: AGENT_SYSTEM_PROMPT,
       thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
       responseMimeType: "application/json",
       responseSchema: {
@@ -80,6 +100,7 @@ export const generateInitialCode = async (analysis: ProblemAnalysis, language: s
     
     ${isProMode ? `Before the code, provide a brief 'reasoning' section wrapped in <reasoning> tags. Then provide the ${language.toUpperCase()} code.` : `Return ONLY the ${language.toUpperCase()} code. No markdown formatting.`}`,
     config: {
+      systemInstruction: AGENT_SYSTEM_PROMPT,
       thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
     }
   });
@@ -122,6 +143,7 @@ export const generateTestCases = async (problemDescription: string, analysis: Pr
     Analysis: ${JSON.stringify(analysis)}
     Code for context: ${existingCode}`,
     config: {
+      systemInstruction: AGENT_SYSTEM_PROMPT,
       
       responseMimeType: "application/json",
       responseSchema: {
@@ -170,6 +192,7 @@ export const debugAndRepair = async (
     
     ${isProMode ? "Before the code, provide a 'reasoning' section wrapped in <reasoning> tags explaining the bug and the fix. Then provide the FIXED Python code." : "Analyze the failures and provide the FIXED Python code. Return ONLY the code. No markdown formatting."}`,
     config: {
+      systemInstruction: AGENT_SYSTEM_PROMPT,
       thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
     }
   });
@@ -207,6 +230,7 @@ export const optimizeCode = async (problemDescription: string, code: string, isP
     
     ${isProMode ? "Provide a step-by-step reasoning section wrapped in <reasoning> tags explaining your analysis for steps 1-5. Then provide the optimized Python code (step 6)." : "Analyze the code internally and return ONLY the optimized Python code. No markdown formatting."}`,
     config: {
+      systemInstruction: AGENT_SYSTEM_PROMPT,
       thinkingConfig: { thinkingLevel: isProMode ? ThinkingLevel.HIGH : ThinkingLevel.LOW },
     }
   });
